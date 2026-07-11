@@ -1,4 +1,18 @@
-from datetime import datetime, timedelta
+"""
+Personal electricity price viewer (DK1 / DK2).
+
+No server, no scheduler, no database - just this one file.
+Deploy for free on Streamlit Community Cloud (share.streamlit.io)
+and open the resulting URL on your tablet.
+
+Refresh behaviour: the data pull is cached and only re-fetched once
+per day, right after 14:00 - which is when tomorrow's day-ahead
+prices are typically published. Opening the app before 14:00 reuses
+today's cached data; opening it after 14:00 triggers exactly one
+fresh pull, and every open after that reuses it until the next day.
+"""
+
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,8 +35,8 @@ def _cache_bucket() -> str:
 
 @st.cache_data(show_spinner="Fetching latest prices...")
 def fetch_prices(cache_bucket: str) -> pd.DataFrame:
-    start = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
-    end = (datetime.utcnow() + timedelta(days=2)).strftime("%Y-%m-%d")
+    start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+    end = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
     params = {
         "start": start,
         "end": end,
@@ -77,6 +91,6 @@ if not future.empty:
     if window_start is not None:
         fig.add_vrect(x0=window_start, x1=window_end, fillcolor="green", opacity=0.2, line_width=0)
     fig.update_layout(yaxis_title="øre/kWh", margin=dict(l=0, r=0, t=10, b=0), height=350)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")

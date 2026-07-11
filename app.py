@@ -69,6 +69,8 @@ if not future.empty:
     st.metric("Current price", f"{current_ore_kwh:.1f} øre/kWh")
 
     cheapest = future.loc[future["SpotPriceDKK"].idxmin()]
-    st.caption(
-        f"Cheapest upcoming
+    st.caption(f"Cheapest upcoming hour: {cheapest['HourDK'].strftime('%a %H:%M')} at {cheapest['SpotPriceDKK']/10:.1f} øre/kWh")
+
+st.line_chart(area_df.set_index("HourDK")["SpotPriceDKK"] / 10)
+
 st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")

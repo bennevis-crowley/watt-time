@@ -93,7 +93,9 @@ if not future.empty:
     fig.update_layout(yaxis_title="øre/kWh", margin=dict(l=0, r=0, t=10, b=0), height=350)
     st.plotly_chart(fig, use_container_width=True)
 
-st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")future = area_df[area_df["HourDK"] >= now]
+st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")
+
+future = area_df[area_df["HourDK"] >= now]
 
 if not future.empty:
     current_ore_kwh = future.iloc[0]["SpotPriceDKK"] / 10

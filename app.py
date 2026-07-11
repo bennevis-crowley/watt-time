@@ -68,9 +68,21 @@ if not future.empty:
     current_ore_kwh = future.iloc[0]["SpotPriceDKK"] / 10
     st.metric("Current price", f"{current_ore_kwh:.1f} øre/kWh")
 
-    cheapest = future.loc[future["SpotPriceDKK"].idxmin()]
-    st.caption(f"Cheapest upcoming hour: {cheapest['HourDK'].strftime('%a %H:%M')} at {cheapest['SpotPriceDKK']/10:.1f} øre/kWh")
+    period = st.slider("Cheapest period length (hours)", min_value=1, max_value=6, value=1)
 
-st.line_chart(area_df.set_index("HourDK")["SpotPriceDKK"] / 10)
+    if len(future) >= period:
+        rolling_avg = future["SpotPriceDKK"].rolling(window=period).mean()
+        end_idx = rolling_avg.idxmin()
+        end_pos = future.index.get_loc(end_idx)
+        start_pos = end_pos - period + 1
+        window = future.iloc[start_pos : end_pos + 1]
+        window_start = window.iloc[0]["HourDK"]
+        window_end = window.iloc[-1]["HourDK"] + pd.Timedelta(hours=1)
+        avg_price = window["SpotPriceDKK"].mean() / 10
+        st.caption(f"Cheapest {period}-hour window: {window_start.strftime('%a %H:%M')}–{window_end.strftime('%H:%M')} at {avg_price:.1f} øre/kWh avg")
+    else:
+        st.caption("Not enough upcoming data for that period length yet.")
+
+st.line_chart(future.set_index("HourDK")["SpotPriceDKK"] / 10)
 
 st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")

@@ -13,11 +13,14 @@ fresh pull, and every open after that reuses it until the next day.
 """
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+
+DK_TZ = ZoneInfo("Europe/Copenhagen")
 
 EDS_URL = "https://api.energidataservice.dk/dataset/DayAheadPrices"
 PRICE_AREA = "DK2"
@@ -28,7 +31,7 @@ def _cache_bucket() -> str:
     """A string that only changes once per day, right after 14:00.
     Passing this into the cached fetch function means Streamlit will
     only actually re-fetch when it changes - i.e. once daily."""
-    now = datetime.now()
+    now = datetime.now(DK_TZ)
     bucket_date = now.date() if now.hour >= REFRESH_HOUR else now.date() - timedelta(days=1)
     return bucket_date.isoformat()
 
@@ -49,7 +52,7 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
     df = pd.DataFrame(records)
     if df.empty:
         raise ValueError("No data returned from Energi Data Service")
-    df["HourDK"] = pd.to_datetime(df["TimeDK"])
+    df["HourDK"] = pd.to_datetime(df["TimeDK"]).dt.tz_localize(DK_TZ)
     df["SpotPriceDKK"] = df["DayAheadPriceDKK"]
     return df
 
@@ -60,7 +63,7 @@ st.title("⚡ Electricity Prices — DK2")
 df = fetch_prices(_cache_bucket())
 area_df = df.sort_values("HourDK")
 
-now = pd.Timestamp.now()
+now = pd.Timestamp.now(tz=DK_TZ)
 future = area_df[area_df["HourDK"] >= now]
 
 if not future.empty:

@@ -1,10 +1,24 @@
+"""
+Personal electricity price viewer (DK1 / DK2).
+
+No server, no scheduler, no database - just this one file.
+Deploy for free on Streamlit Community Cloud (share.streamlit.io)
+and open the resulting URL on your tablet.
+
+Refresh behaviour: the data pull is cached and only re-fetched once
+per day, right after 14:00 - which is when tomorrow's day-ahead
+prices are typically published. Opening the app before 14:00 reuses
+today's cached data; opening it after 14:00 triggers exactly one
+fresh pull, and every open after that reuses it until the next day.
+"""
+
 from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
 import streamlit as st
 
-EDS_URL = "https://api.energidataservice.dk/dataset/Elspotprices"
+EDS_URL = "https://api.energidataservice.dk/dataset/DayAheadPrices"
 PRICE_AREAS = ["DK1", "DK2"]
 REFRESH_HOUR = 14
 
@@ -26,7 +40,7 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
         "start": start,
         "end": end,
         "filter": '{"PriceArea":["DK1","DK2"]}',
-        "sort": "HourUTC asc",
+        "sort": "TimeDK asc",
     }
     resp = requests.get(EDS_URL, params=params, timeout=30)
     resp.raise_for_status()
@@ -34,7 +48,8 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
     df = pd.DataFrame(records)
     if df.empty:
         raise ValueError("No data returned from Energi Data Service")
-    df["HourDK"] = pd.to_datetime(df["HourDK"])
+    df["HourDK"] = pd.to_datetime(df["TimeDK"])
+    df["SpotPriceDKK"] = df["DayAheadPriceDKK"]
     return df
 
 
@@ -55,10 +70,5 @@ if not future.empty:
 
     cheapest = future.loc[future["SpotPriceDKK"].idxmin()]
     st.caption(
-        f"Cheapest upcoming hour: {cheapest['HourDK'].strftime('%a %H:%M')} "
-        f"at {cheapest['SpotPriceDKK']/10:.1f} øre/kWh"
-    )
-
-st.line_chart(area_df.set_index("HourDK")["SpotPriceDKK"] / 10)
-
+        f"Cheapest upcoming
 st.caption("Prices in øre/kWh. Refreshes once daily shortly after 14:00.")

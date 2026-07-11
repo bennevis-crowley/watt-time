@@ -20,7 +20,7 @@ import requests
 import streamlit as st
 
 EDS_URL = "https://api.energidataservice.dk/dataset/DayAheadPrices"
-PRICE_AREAS = ["DK1", "DK2"]
+PRICE_AREA = "DK2"
 REFRESH_HOUR = 14
 
 
@@ -40,7 +40,7 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
     params = {
         "start": start,
         "end": end,
-        "filter": '{"PriceArea":["DK1","DK2"]}',
+        "filter": f'{{"PriceArea":["{PRICE_AREA}"]}}',
         "sort": "TimeDK asc",
     }
     resp = requests.get(EDS_URL, params=params, timeout=30)
@@ -55,12 +55,10 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
 
 
 st.set_page_config(page_title="Electricity Prices", layout="wide")
-st.title("⚡ Electricity Prices")
+st.title("⚡ Electricity Prices — DK2")
 
 df = fetch_prices(_cache_bucket())
-
-area = st.radio("Area", PRICE_AREAS, horizontal=True)
-area_df = df[df["PriceArea"] == area].sort_values("HourDK")
+area_df = df.sort_values("HourDK")
 
 now = pd.Timestamp.now()
 future = area_df[area_df["HourDK"] >= now]

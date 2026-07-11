@@ -1,17 +1,3 @@
-"""
-Personal electricity price viewer (DK1 / DK2).
-
-No server, no scheduler, no database - just this one file.
-Deploy for free on Streamlit Community Cloud (share.streamlit.io)
-and open the resulting URL on your tablet.
-
-Refresh behaviour: the data pull is cached and only re-fetched once
-per day, right after 14:00 - which is when tomorrow's day-ahead
-prices are typically published. Opening the app before 14:00 reuses
-today's cached data; opening it after 14:00 triggers exactly one
-fresh pull, and every open after that reuses it until the next day.
-"""
-
 from datetime import datetime, timedelta
 
 import pandas as pd

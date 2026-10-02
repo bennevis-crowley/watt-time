@@ -34,6 +34,13 @@ TARIFF_URL = "https://api.energidataservice.dk/dataset/DatahubPricelist"
 RADIUS_GLN = "5790000705689"      # Radius Elnet A/S - DSO for Copenhagen
 ENERGINET_GLN = "5790000432752"   # Energinet - TSO
 RADIUS_NET_TARIFF_CODE = "DT_C_01"  # "Nettarif C time" (household / small business)
+ELAFGIFT_CODE = "EA-001"            # electricity tax, published under Energinet's GLN
+
+# Fallback elafgift (electricity tax), øre/kWh excl. VAT, by calendar year - only
+# used if the EA-001 record can't be fetched. Cut to the EU minimum (0.8) for
+# 2026-2027; the app warns if a year is missing here.
+ELAFGIFT_ORE_KWH = {2026: 0.8, 2027: 0.8}
+VAT_RATE = 0.25
 
 
 def _cache_bucket() -> str:
@@ -68,13 +75,13 @@ def fetch_prices(cache_bucket: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=6 * 3600, show_spinner="Fetching tariffs...")
 def fetch_tariffs() -> pd.DataFrame:
-    """All Radius + Energinet tariff records (D03 = tariffs). Tariffs are valid
-    for months at a time, so we pull the latest records and filter by validity
-    ourselves rather than using start/end (which key off ValidFrom)."""
+    """All Radius + Energinet price-list records (tariffs, elafgift, ...). They
+    are valid for months at a time, so we pull the latest records and filter by
+    validity ourselves rather than using start/end (which key off ValidFrom)."""
     params = {
-        "filter": f'{{"GLN_Number":["{RADIUS_GLN}","{ENERGINET_GLN}"],"ChargeType":["D03"]}}',
+        "filter": f'{{"GLN_Number":["{RADIUS_GLN}","{ENERGINET_GLN}"]}}',
         "sort": "ValidFrom desc",
-        "limit": 2000,
+        "limit": 5000,
     }
     resp = requests.get(TARIFF_URL, params=params, timeout=30)
     resp.raise_for_status()
@@ -107,6 +114,10 @@ TARIFF_COMPONENTS = {
     "TSOSystem": (
         "TSO system tariff",
         lambda t: (t["GLN_Number"] == ENERGINET_GLN) & t["Note"].str.contains("systemtarif", case=False),
+    ),
+    "Elafgift": (
+        "Electricity tax (elafgift)",
+        lambda t: (t["GLN_Number"] == ENERGINET_GLN) & (t["ChargeTypeCode"] == ELAFGIFT_CODE),
     ),
 }
 
@@ -159,14 +170,31 @@ if not future.empty:
     except Exception as exc:  # network / schema problems shouldn't kill the price view
         st.warning(f"Could not load tariffs ({exc}). Showing spot price only.")
 
-    has_tariffs = len(components) > 1
-    include_tariffs = has_tariffs and st.toggle(
-        "Include tariffs in current price and cheapest windows", value=True
-    )
-    tariff_cols = [c for c, _ in components if c != "Spot"]
-    future["Total"] = future["Spot"] + (future[tariff_cols].sum(axis=1) if include_tariffs else 0)
+    # --- elafgift: normally from the API (EA-001); fall back to the fixed table ---
+    if "Elafgift" not in future:
+        future["Elafgift"] = future["HourDK"].dt.year.map(ELAFGIFT_ORE_KWH)
+        if future["Elafgift"].isna().any():
+            years = sorted(future.loc[future["Elafgift"].isna(), "HourDK"].dt.year.unique())
+            st.warning(f"No elafgift rate for {', '.join(map(str, years))} - add it to ELAFGIFT_ORE_KWH.")
+        future["Elafgift"] = future["Elafgift"].fillna(0)
+        components.append(("Elafgift", "Electricity tax (elafgift)"))
 
-    suffix = " (spot + tariffs)" if include_tariffs else " (spot only)"
+    col1, col2 = st.columns(2)
+    include_tariffs = col1.toggle(
+        "Include tariffs and elafgift in current price and cheapest windows", value=True
+    )
+    include_vat = col2.toggle(f"Show prices incl. VAT ({VAT_RATE:.0%})", value=True)
+
+    tariff_cols = [c for c, _ in components if c != "Spot"]
+    vat_mult = 1 + VAT_RATE if include_vat else 1
+    total_cols = ["Spot"] + (tariff_cols if include_tariffs else [])
+    future["Total"] = future[total_cols].sum(axis=1) * vat_mult
+    if include_vat:  # VAT shown as its own stacked segment on top of everything
+        future["VAT"] = future[[c for c, _ in components]].sum(axis=1) * VAT_RATE
+        components.append(("VAT", f"VAT ({VAT_RATE:.0%})"))
+
+    suffix = " (spot + tariffs + elafgift)" if include_tariffs else " (spot only)"
+    suffix += ", incl. VAT" if include_vat else ", excl. VAT"
     st.metric("Current price" + suffix, f"{future.iloc[0]['Total']:.1f} øre/kWh")
 
     st.subheader("Cheapest upcoming windows")
@@ -234,6 +262,6 @@ if not future.empty:
             )
 
 st.caption(
-    "Prices in øre/kWh, excl. VAT and electricity tax (elafgift). Tariffs: Radius (DSO) and "
-    "Energinet (TSO). Spot refreshes once daily shortly after 14:00."
+    "Prices in øre/kWh. Tariffs: Radius (DSO) and Energinet (TSO); elafgift from the price list. "
+    "Excludes your supplier's markup and subscription fees. Spot refreshes once daily shortly after 14:00."
 )
